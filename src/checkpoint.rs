@@ -444,7 +444,7 @@ pub fn deconstruct_dex_from_checkpoint(dex_map: &Map<String, Value>) -> Dex {
 
     let fee = dex_map
         .get("fee")
-        .map(|fee| fee.as_u64().expect("Could not convert fee to u64"));
+        .map(|fee| fee.as_u64().expect(format!("Could not convert fee to u64. Current fee: {}, is string: {}", dex_map.get("fee").unwrap(), dex_map.get("fee").unwrap().as_str().unwrap()).as_str()));
 
     Dex::new(factory_address, dex_variant, block_number, fee)
 }
