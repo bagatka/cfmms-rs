@@ -28,8 +28,9 @@ pub async fn sync_pools_from_checkpoint<M: 'static + Middleware>(
     path_to_checkpoint: &str,
     step: usize,
     middleware: Arc<M>,
+    skip_sync: bool,
 ) -> Result<(Vec<Dex>, Vec<Pool>), CFMMError<M>> {
-    sync_pools_from_checkpoint_with_throttle(path_to_checkpoint, step, 0, middleware).await
+    sync_pools_from_checkpoint_with_throttle(path_to_checkpoint, step, 0, middleware, skip_sync).await
 }
 
 //Get all pairs from last synced block and sync reserve values for each Dex in the `dexes` vec.
@@ -38,6 +39,7 @@ pub async fn sync_pools_from_checkpoint_with_throttle<M: 'static + Middleware>(
     step: usize,
     requests_per_second_limit: usize,
     middleware: Arc<M>,
+    skip_sync: bool,
 ) -> Result<(Vec<Dex>, Vec<Pool>), CFMMError<M>> {
     let current_block = middleware
         .get_block_number()
@@ -51,38 +53,40 @@ pub async fn sync_pools_from_checkpoint_with_throttle<M: 'static + Middleware>(
     //Read in checkpoint
     let (dexes, pools, checkpoint_block_number) = deconstruct_checkpoint(path_to_checkpoint);
 
-    //Sort all of the pools from the checkpoint into uniswapv2 and uniswapv3 pools so we can sync them concurrently
-    let (uinswap_v2_pools, uniswap_v3_pools) = sort_pool_variants(pools);
-
     let mut aggregated_pools = vec![];
     let mut handles = vec![];
 
-    //Sync all uniswap v2 pools from checkpoint
-    if !uinswap_v2_pools.is_empty() {
-        handles.push(
-            batch_sync_pools_from_checkpoint(
-                uinswap_v2_pools,
-                DexVariant::UniswapV2,
-                multi_progress_bar.add(ProgressBar::new(0)),
-                request_throttle.clone(),
-                middleware.clone(),
-            )
-            .await,
-        );
-    }
+    if !skip_sync {
+        //Sort all of the pools from the checkpoint into uniswapv2 and uniswapv3 pools so we can sync them concurrently
+        let (uinswap_v2_pools, uniswap_v3_pools) = sort_pool_variants(pools);
 
-    //Sync all uniswap v3 pools from checkpoint
-    if !uniswap_v3_pools.is_empty() {
-        handles.push(
-            batch_sync_pools_from_checkpoint(
-                uniswap_v3_pools,
-                DexVariant::UniswapV3,
-                multi_progress_bar.add(ProgressBar::new(0)),
-                request_throttle.clone(),
-                middleware.clone(),
-            )
-            .await,
-        );
+        //Sync all uniswap v2 pools from checkpoint
+        if !uinswap_v2_pools.is_empty() {
+            handles.push(
+                batch_sync_pools_from_checkpoint(
+                    uinswap_v2_pools,
+                    DexVariant::UniswapV2,
+                    multi_progress_bar.add(ProgressBar::new(0)),
+                    request_throttle.clone(),
+                    middleware.clone(),
+                )
+                .await,
+            );
+        }
+
+        //Sync all uniswap v3 pools from checkpoint
+        if !uniswap_v3_pools.is_empty() {
+            handles.push(
+                batch_sync_pools_from_checkpoint(
+                    uniswap_v3_pools,
+                    DexVariant::UniswapV3,
+                    multi_progress_bar.add(ProgressBar::new(0)),
+                    request_throttle.clone(),
+                    middleware.clone(),
+                )
+                .await,
+            );
+        }
     }
 
     //Sync all pools from the since synced block
